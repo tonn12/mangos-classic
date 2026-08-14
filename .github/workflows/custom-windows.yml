@@ -1,0 +1,73 @@
+name: Custom Windows Build
+
+on:
+  push:
+    branches:
+      - custom
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: RelWithDebInfo
+  BUILD_DIR: ${{ github.workspace }}/build
+  BOOST_VERSION: "1.87.0"
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout custom CMaNGOS
+        uses: actions/checkout@v6
+
+      - name: Install Boost
+        uses: MarkusJx/install-boost@v2.6.0
+        id: install-boost
+        with:
+          boost_version: ${{ env.BOOST_VERSION }}
+          platform_version: "2022"
+          toolset: "msvc"
+
+      - name: Configure
+        env:
+          BOOST_ROOT: ${{ steps.install-boost.outputs.BOOST_ROOT }}
+        run: >
+          cmake
+          -S .
+          -B "${{ env.BUILD_DIR }}"
+          -DBUILD_GAME_SERVER=ON
+          -DBUILD_LOGIN_SERVER=ON
+          -DBUILD_EXTRACTORS=OFF
+          -DBUILD_PLAYERBOTS=ON
+          -DBUILD_AHBOT=ON
+          -DBUILD_MODULES=OFF
+          -DBUILD_GIT_ID=ON
+
+      - name: Build
+        run: >
+          cmake
+          --build "${{ env.BUILD_DIR }}"
+          --config "${{ env.BUILD_TYPE }}"
+          --parallel 8
+
+      - name: Show PlayerBots revision
+        shell: pwsh
+        run: |
+          git -C src/modules/PlayerBots log -1 --oneline
+          git -C src/modules/PlayerBots remote -v
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item "${{ env.BUILD_DIR }}\bin\x64_${{ env.BUILD_TYPE }}\*" package -Recurse
+          Compress-Archive -Path package\* -DestinationPath "CMaNGOS-Classic-Custom-${{ github.sha }}.zip"
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v7
+        with:
+          name: CMaNGOS-Classic-Custom-Win64
+          path: CMaNGOS-Classic-Custom-${{ github.sha }}.zip
+          retention-days: 30
