@@ -327,9 +327,10 @@ void AddSC_silithus()
     newScript->pGossipHello = &GossipHello_npc_solenor;
     newScript->pGossipSelect = &GossipSelect_npc_solenor;
     newScript->RegisterSelf();
-
+    /*
     newScript = new Script;
     newScript->Name = "at_southwind_tower";
     newScript->pAreaTrigger = &AreaTrigger_at_southwind_tower;
     newScript->RegisterSelf();
+    */
 }
