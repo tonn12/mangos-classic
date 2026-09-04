@@ -22,6 +22,10 @@ jobs:
       - name: Checkout custom CMaNGOS
         uses: actions/checkout@v6
 
+      - name: Apply GridMap bounds crash fix
+        shell: pwsh
+        run: git apply .github/patches/gridmap-getgrid-bounds.patch
+
       - name: Install Boost
         uses: MarkusJx/install-boost@v2.6.0
         id: install-boost
