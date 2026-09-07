@@ -150,7 +150,7 @@ Replace-Exact @'
 # expensive end connector after A* so routes rejected by bot-specific costs do not
 # cause unnecessary end-side pathfinding. Transport behavior stays unchanged.
 $loopStartMarker = "    //Cycle over the combinations of these 5 nodes.`n"
-$loopEndMarker = "`n    `n    if (sPlayerbotAIConfig.hasLog(\"deadzone.csv\"))"
+$loopEndMarker = "`n    `n    if (sPlayerbotAIConfig.hasLog(`"deadzone.csv`"))"
 $loopStartIndex = $text.IndexOf($loopStartMarker)
 if ($loopStartIndex -lt 0) {
     throw "Connector optimization: loop start marker not found"
