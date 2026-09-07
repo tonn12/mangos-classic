@@ -171,6 +171,12 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
         return ai->DoSpecificAction("use", Event("do loot", chat->formatQItem(lootObject.reqItem) + " " + chat->formatGameobject(go)));
     }
 
+    // Opening spells for GameObjects must target the GameObject directly.
+    // Passing the bot as a Unit target can make generic Opening (6477)
+    // complete without actually opening the selected chest.
+    if (go)
+        return ai->CastSpell(spellId, go);
+
     return ai->CastSpell(spellId, bot);
 }
 
