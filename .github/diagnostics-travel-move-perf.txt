@@ -1,0 +1,2 @@
+Temporary diagnostic branch for PlayerBots travel movement performance profiling.
+PlayerBots branch: diagnostics/travel-move-perf
