@@ -7,6 +7,10 @@ on:
       - diagnostics/travel-move-perf
   workflow_dispatch:
 
+concurrency:
+  group: custom-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   BUILD_TYPE: RelWithDebInfo
   BUILD_DIR: ${{ github.workspace }}/build
@@ -50,18 +54,6 @@ jobs:
           -DBUILD_MODULES=OFF
           -DBUILD_GIT_ID=ON
 
-      - name: Apply deep PlayerBots movement profiler
-        shell: pwsh
-        run: git -C src/modules/PlayerBots apply --recount "$env:GITHUB_WORKSPACE/.github/patches/playerbots-deep-movement-perf.patch"
-
-      - name: Apply TravelNode deep profiler
-        shell: pwsh
-        run: .github/scripts/apply-playerbots-travelnode-perf.ps1 -Path "src/modules/PlayerBots/playerbot/TravelNode.cpp"
-
-      - name: Apply TravelNode performance optimizations
-        shell: pwsh
-        run: .github/scripts/apply-playerbots-travelnode-opt.ps1 -Path "src/modules/PlayerBots/playerbot/TravelNode.cpp"
-
       - name: Build
         run: >
           cmake
@@ -69,12 +61,11 @@ jobs:
           --config "${{ env.BUILD_TYPE }}"
           --parallel 8
 
-      - name: Show PlayerBots revision
+      - name: Show vendored PlayerBots source
         shell: pwsh
         run: |
-          git -C src/modules/PlayerBots log -1 --oneline
-          git -C src/modules/PlayerBots remote -v
-          git -C src/modules/PlayerBots diff -- playerbot/strategy/actions/MovementActions.cpp playerbot/TravelNode.cpp
+          git log -1 --oneline -- src/modules/PlayerBots
+          git status --short
 
       - name: Package
         shell: pwsh
