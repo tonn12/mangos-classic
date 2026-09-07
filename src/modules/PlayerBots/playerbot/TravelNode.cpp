@@ -12,7 +12,6 @@
 #include "strategy/values/BudgetValues.h"
 #include "strategy/values/LastMovementValue.h"
 #include "playerbot/ServerFacade.h"
-#include "playerbot/PerformanceMonitor.h"
 #include "MotionGenerators/MoveMap.h"
 #include "strategy/values/HazardsValue.h"
 
@@ -866,9 +865,8 @@ void TravelPath::makeShortCut(WorldPosition startPos, float maxDist, Unit* bot)
         newPath.push_back(p);
     }
 
-    if (newPath.empty() || minDist > maxDistSq || newPath.front().point.getMapId() != startPos.getMapId())
+    if (newPath.empty() || minDist > maxDistSq || newPath.front().point.getMapId() != startPos.getMapId()) //New path doesn't work. Just use full path.
     {
-        clear();
         return;
     }
 
@@ -1103,13 +1101,18 @@ bool TravelPath::UpcommingSpecialMovement(WorldPosition startPos, float maxDist,
     //Teleport to end of transport.
     if (sPlayerbotAIConfig.transportTeleportType == 2 && nextP->type == PathNodeType::NODE_TRANSPORT)
     {
+        if (prevP->point.sqDistance2d(startPos) > INTERACTION_DISTANCE * INTERACTION_DISTANCE) //Can we teleport or do we need to walk first?
+            return false; //Walk to startP (last non transport point)
+
         for (auto p = startP + 1; p != fullPath.end(); p++) //Move along the transport path to the end of the boat ride. 
         {
             if (p->type != PathNodeType::NODE_TRANSPORT)
             {
-                cutTo(*prevP, false); //PrevP = where transport will stop, startP = dock where we want to walk to.
+                cutTo(*prevP, false); //PrevP = where transport will stop, p = dock where we teleport to
                 return true;
             }
+
+            prevP = p;
         }
     }    
 
@@ -1497,29 +1500,13 @@ TravelNode* TravelNodeMap::getNode(WorldPosition pos, std::vector<WorldPosition>
 
 TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Unit* unit)
 {
-    PlayerbotAI* perfAi = nullptr;
-    if (Player* player = dynamic_cast<Player*>(unit))
-        perfAi = player->GetPlayerbotAI();
-
     float unitSpeed = unit ? unit->GetSpeed(MOVE_RUN) : 7.0f;
 
     if (start == goal)
         return TravelNodeRoute();
 
-    bool hasRoute = false;
-    {
-        std::unique_ptr<PerformanceMonitorOperation> pmoReachability;
-        if (perfAi)
-            pmoReachability = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoute::reachability", perfAi);
-        hasRoute = start->hasRouteTo(goal);
-    }
-
-    if (!hasRoute)
+    if (!start->hasRouteTo(goal) && start->getName() != "Bot Pos")
         return TravelNodeRoute();
-
-    std::unique_ptr<PerformanceMonitorOperation> pmoAStar;
-    if (perfAi)
-        pmoAStar = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoute::AStar", perfAi);
 
     //Basic A* algoritm
     std::unordered_map<TravelNode*, TravelNodeStub> m_stubs;
@@ -1530,7 +1517,7 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
 
     float f, g, h;
 
-    std::vector<TravelNodeStub*> open;
+    std::vector<TravelNodeStub*> open, closed;
 
     std::vector<TravelNode*> portNodes;
 
@@ -1648,21 +1635,24 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
         return TravelNodeRoute();
     }
 
-    auto openCmp = [](TravelNodeStub* i, TravelNodeStub* j) { return i->m_f > j->m_f; };
-    std::make_heap(open.begin(), open.end(), openCmp);
+    std::make_heap(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
 
     open.push_back(startStub);
-    std::push_heap(open.begin(), open.end(), openCmp);
+    std::push_heap(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
     startStub->open = true;
 
     while (!open.empty())
     {
-        std::pop_heap(open.begin(), open.end(), openCmp);
-        currentNode = open.back(); // pop node from open for which f is minimal
+        std::sort(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
+
+        currentNode = open.front(); // pop n node from open for which f is minimal
+
+        std::pop_heap(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
         open.pop_back();
         currentNode->open = false;
 
         currentNode->close = true;
+        closed.push_back(currentNode);
 
         if (currentNode->dataNode == goal)
         {
@@ -1692,10 +1682,7 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
             if (linkCost <= 0)
                 continue;
 
-            auto stubIt = m_stubs.find(linkNode);
-            if (stubIt == m_stubs.end())
-                stubIt = m_stubs.emplace(linkNode, TravelNodeStub(linkNode)).first;
-            childNode = &stubIt->second;
+            childNode = &m_stubs.insert(std::make_pair(linkNode, TravelNodeStub(linkNode))).first->second;
 
             g = currentNode->m_g + linkCost; // stance from start + distance between the two nodes
             if ((childNode->open || childNode->close) && childNode->m_g <= g) // n' is already in opend or closed with a lower cost g(n')
@@ -1720,14 +1707,8 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
             if (!childNode->open)
             {
                 open.push_back(childNode);
-                std::push_heap(open.begin(), open.end(), openCmp);
+                std::push_heap(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
                 childNode->open = true;
-            }
-            else
-            {
-                // m_f decreased for a node already in the heap. std::heap has no
-                // decrease-key operation, so restore the heap in linear time.
-                std::make_heap(open.begin(), open.end(), openCmp);
             }
         }
     }
@@ -1739,10 +1720,6 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
 
 TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition endPos, std::vector<WorldPosition>& startPath, std::vector<WorldPosition>& endPath, Unit* unit)
 {
-    PlayerbotAI* perfAi = nullptr;
-    if (Player* player = dynamic_cast<Player*>(unit))
-        perfAi = player->GetPlayerbotAI();
-
     if (m_nodes.empty())
         return TravelNodeRoute();
 
@@ -1752,22 +1729,7 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
         transportEntry = unit->GetTransport()->GetEntry();
 
     std::vector<WorldPosition> newStartPath;
-    std::vector<TravelNode*> startNodes, endNodes;
-    {
-        std::unique_ptr<PerformanceMonitorOperation> pmoNodes;
-        if (perfAi)
-            pmoNodes = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::collect-nodes", perfAi);
-
-        for (TravelNode* node : m_map_nodes[startPos.getMapId()])
-        {
-            if (transportEntry && node->getTransportId() != transportEntry)
-                continue;
-            startNodes.push_back(node);
-        }
-
-        for (TravelNode* node : m_map_nodes[endPos.getMapId()])
-            endNodes.push_back(node);
-    }
+    std::vector<TravelNode*> startNodes = getNodes(startPos, -1, transportEntry), endNodes = getNodes(endPos);
 
     if (startNodes.empty() || endNodes.empty())
         return TravelNodeRoute();    
@@ -1775,23 +1737,15 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
     uint32 startNr = std::min(5, (int)startNodes.size());
     uint32 endNr = std::min(5, (int)endNodes.size());
 
-    std::unique_ptr<PerformanceMonitorOperation> pmoSort;
-    if (perfAi)
-        pmoSort = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::sort-nodes", perfAi);
-
     //Partial sort to get the closest 5 nodes at the begin of the array.        
     std::partial_sort(startNodes.begin(), startNodes.begin() + startNr, startNodes.end(), [startPos](TravelNode* i, TravelNode* j) {return i->getPosition()->sqDistance(startPos) < j->getPosition()->sqDistance(startPos); });
     startNodes.resize(startNr);
     std::partial_sort(endNodes.begin(), endNodes.begin() + endNr, endNodes.end(), [endPos](TravelNode* i, TravelNode* j) {return i->getPosition()->sqDistance(endPos) < j->getPosition()->sqDistance(endPos); });
     endNodes.resize(endNr);
 
-    pmoSort.reset();
-
     uint64 uid = urand(0, UINT32_MAX) * urand(0, UINT32_MAX);
 
     std::vector<TravelNode*> badStartNodes, badEndNodes;
-
-    std::unordered_map<TravelNode*, std::vector<WorldPosition>> goodStartPaths;
 
     //Cycle over the combinations of these 5 nodes.
     for (auto& endNode : endNodes)
@@ -1807,122 +1761,34 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
 
             float maxStartDistance = startNode->isTransport() ? 20.0f : 1.0f;
 
-            // Preserve the original transport shortcut exactly: transport routes
-            // return directly and never perform local start/end connector checks.
+            TravelNodeRoute route = getRoute(startNode, endNode, unit);
+
             if (transportEntry)
-            {
-                TravelNodeRoute route;
-                {
-                    std::unique_ptr<PerformanceMonitorOperation> pmoNodeRoute;
-                    if (perfAi)
-                        pmoNodeRoute = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::node-AStar", perfAi);
-                    route = getRoute(startNode, endNode, unit);
-                }
                 return route;
-            }
-
-            // getRoute(startNode, endNode, unit) performs the same graph gate before
-            // entering A*. Do it here as a cheap precheck so connector work is not
-            // done for node pairs that cannot possibly have a graph route.
-            if (!startNode->hasRouteTo(endNode))
-                continue;
-
-            // Check the local path from the bot to this start TravelNode before A*.
-            // Cache successful connectors because the same startNode can be tested
-            // against several endNodes before a route is accepted.
-            bool hasStartPath = false;
-            auto cachedStartPath = goodStartPaths.find(startNode);
-            if (cachedStartPath != goodStartPaths.end())
-            {
-                newStartPath = cachedStartPath->second;
-                hasStartPath = true;
-            }
-            else
-            {
-                newStartPath = startPath;
-                hasStartPath = startNodePosition.cropPathTo(newStartPath, maxStartDistance);
-
-                if (!hasStartPath)
-                {
-                    {
-                        std::unique_ptr<PerformanceMonitorOperation> pmoStartConnector;
-                        if (perfAi)
-                            pmoStartConnector = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::start-connector", perfAi);
-                        newStartPath = startPos.getPathTo(startNodePosition, unit);
-                    }
-                    hasStartPath = startNodePosition.isPathTo(newStartPath, maxStartDistance);
-                }
-
-                if (!hasStartPath)
-                {
-                    WorldPosition surfaceStart = startPos;
-                    WorldPosition surfaceNode = startNodePosition;
-                    if (surfaceStart.setAtWaterSurface() || surfaceNode.setAtWaterSurface())
-                    {
-                        {
-                            std::unique_ptr<PerformanceMonitorOperation> pmoStartWater;
-                            if (perfAi)
-                                pmoStartWater = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::start-connector-water", perfAi);
-                            newStartPath = surfaceStart.getPathTo(surfaceNode, unit);
-                        }
-                        hasStartPath = surfaceNode.isPathTo(newStartPath, maxStartDistance);
-                    }
-                }
-
-                if (!hasStartPath)
-                {
-                    badStartNodes.push_back(startNode);
-                    continue;
-                }
-
-                goodStartPaths.emplace(startNode, newStartPath);
-            }
-
-            // Only graph-reachable node pairs with a valid local start connector
-            // reach the comparatively expensive TravelNode A* search.
-            TravelNodeRoute route;
-            {
-                std::unique_ptr<PerformanceMonitorOperation> pmoNodeRoute;
-                if (perfAi)
-                    pmoNodeRoute = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::node-AStar", perfAi);
-                route = getRoute(startNode, endNode, unit);
-            }
 
             if (route.isEmpty())
                 continue;
 
-            // Keep the end connector after A*: it is more expensive than A* in the
-            // current profile, so do not calculate it for bot-specific rejected routes.
             if (endPath.empty())
             {
                 if (endPos.mapid == startPos.mapid)
                 {
-                    {
-                        std::unique_ptr<PerformanceMonitorOperation> pmoEndConnector;
-                        if (perfAi)
-                            pmoEndConnector = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::end-connector", perfAi);
-                        endPath = endNodePosition.getPathTo(endPos, unit);
-                    }
+                    endPath = endNodePosition.getPathTo(endPos, unit);
 
-                    bool hasEndPath = endPos.isPathTo(endPath, 1.0f);
+                    bool hasPath = endPos.isPathTo(endPath, 1.0f);
 
-                    if (!hasEndPath)
+                    if (!hasPath)
                     {
                         WorldPosition surfaceNode = endNodePosition;
                         WorldPosition surfaceEnd = endPos;
                         if (surfaceNode.setAtWaterSurface() || surfaceEnd.setAtWaterSurface())
                         {
-                            {
-                                std::unique_ptr<PerformanceMonitorOperation> pmoEndWater;
-                                if (perfAi)
-                                    pmoEndWater = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::end-connector-water", perfAi);
-                                endPath = surfaceNode.getPathTo(surfaceEnd, unit);
-                            }
-                            hasEndPath = surfaceEnd.isPathTo(endPath, 1.0f);
+                            endPath = surfaceNode.getPathTo(surfaceEnd, unit);
+                            hasPath = surfaceEnd.isPathTo(endPath, 1.0f);
                         }
                     }
 
-                    if (!hasEndPath)
+                    if (!hasPath)
                     {
                         endPath.clear();
                         badEndNodes.push_back(endNode);
@@ -1933,23 +1799,51 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
                     endPath = {*endNode->getPosition(), endPos};
             }
 
-            startPath = newStartPath;
+            //Check if the bot can actually walk to this start position.
+            newStartPath = startPath;
 
-            if (sPlayerbotAIConfig.hasLog("deadzone.csv"))
+            bool hasPath = (startNodePosition.cropPathTo(newStartPath, maxStartDistance));
+
+            if (!hasPath)
             {
-                PathFindResult fromResult = testPathToLoop(startPos, startNodePosition, unit, uid, {startPos, startNodePosition}, "start");
-
-                PathFindResult toResult = testPathToLoop(endNodePosition, endPos, unit, uid, {endNodePosition, endPos}, "end");
-
-                std::vector<WorldPosition> routePoints;
-                for (auto& p : route.getNodes())
-                    routePoints.push_back(*p->getPosition());
-                testPathToLoop(startPos, endPos, unit, uid, routePoints, "route");
+                newStartPath = startPos.getPathTo(startNodePosition, unit);
+                hasPath = startNodePosition.isPathTo(newStartPath, maxStartDistance);
             }
 
-            return route;
+            if (!hasPath)
+            {
+                WorldPosition surfaceStart = startPos;
+                WorldPosition surfaceNode = startNodePosition;
+                if (surfaceStart.setAtWaterSurface() || surfaceNode.setAtWaterSurface())
+                {
+                    newStartPath = surfaceStart.getPathTo(surfaceNode, unit);
+                    hasPath = surfaceNode.isPathTo(newStartPath, maxStartDistance);
+                }
+            }
+
+            if (hasPath)
+            {
+                startPath = newStartPath;
+
+                if (sPlayerbotAIConfig.hasLog("deadzone.csv"))
+                {
+                    PathFindResult fromResult = testPathToLoop(startPos, startNodePosition, unit, uid, {startPos, startNodePosition}, "start");
+
+                    PathFindResult toResult = testPathToLoop(endNodePosition, endPos, unit, uid, {endNodePosition, endPos}, "end");                
+
+                    std::vector<WorldPosition> routePoints;
+                    for (auto& p : route.getNodes())
+                        routePoints.push_back(*p->getPosition());
+                    testPathToLoop(startPos, endPos, unit, uid, routePoints, "route");
+                }
+
+                return route;
+            }           
+
+            badStartNodes.push_back(startNode);
         }
     }
+
     
     if (sPlayerbotAIConfig.hasLog("deadzone.csv"))
     {
@@ -1996,19 +1890,10 @@ TravelNodeRoute TravelNodeMap::getRoute(WorldPosition startPos, WorldPosition en
 
 TravelPath TravelNodeMap::getFullPath(WorldPosition startPos, WorldPosition endPos, Unit* unit)
 {
-    PlayerbotAI* perfAi = nullptr;
-    if (Player* player = dynamic_cast<Player*>(unit))
-        perfAi = player->GetPlayerbotAI();
-
     TravelPath movePath;
     std::vector<WorldPosition> beginPath, endPath;
 
-    {
-        std::unique_ptr<PerformanceMonitorOperation> pmoBeginPath;
-        if (perfAi)
-            pmoBeginPath = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeFull::begin-path", perfAi);
-        beginPath = endPos.getPathFromPath({ startPos }, unit, 40);
-    }
+    beginPath = endPos.getPathFromPath({ startPos }, unit, 40);
 
     if (endPos.isPathTo(beginPath,sPlayerbotAIConfig.spellDistance)) //If we can get within spell distance a longer route won't help.
         return TravelPath(beginPath);
@@ -2016,45 +1901,23 @@ TravelPath TravelNodeMap::getFullPath(WorldPosition startPos, WorldPosition endP
     //[[Node pathfinding system]]
                 //We try to find nodes near the bot and near the end position that have a route between them.
                 //Then bot has to move towards/along the route.
-    {
-        std::unique_ptr<PerformanceMonitorOperation> pmoLock;
-        if (perfAi)
-            pmoLock = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeFull::lock", perfAi);
-        sTravelNodeMap.m_nMapMtx.lock_shared();
-    }
+    sTravelNodeMap.m_nMapMtx.lock_shared();
 
     //Find the route of nodes starting at a node closest to the start position and ending at a node closest to the endposition.
     //Also returns longPath: The path from the start position to the first node in the route.
-    TravelNodeRoute route;
-    {
-        std::unique_ptr<PerformanceMonitorOperation> pmoRoute;
-        if (perfAi)
-            pmoRoute = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeFull::getRoute", perfAi);
-        route = sTravelNodeMap.getRoute(startPos, endPos, beginPath, endPath, unit);
-    }
+    TravelNodeRoute route = sTravelNodeMap.getRoute(startPos, endPos, beginPath, endPath, unit);
 
     if (route.isEmpty())
     {
         route.cleanTempNodes();
-        // The original code returned while still holding the shared lock.
-        sTravelNodeMap.m_nMapMtx.unlock_shared();
         return movePath;
     }
 
-    {
-        std::unique_ptr<PerformanceMonitorOperation> pmoBuild;
-        if (perfAi)
-            pmoBuild = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeFull::buildPath", perfAi);
-        movePath = route.buildPath(beginPath, endPath);
-    }
+    movePath = route.buildPath(beginPath, endPath);
 
-    {
-        std::unique_ptr<PerformanceMonitorOperation> pmoCleanup;
-        if (perfAi)
-            pmoCleanup = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeFull::cleanup-unlock", perfAi);
-        route.cleanTempNodes();
-        sTravelNodeMap.m_nMapMtx.unlock_shared();
-    }
+    route.cleanTempNodes();
+
+    sTravelNodeMap.m_nMapMtx.unlock_shared();
 
     return movePath;
 }

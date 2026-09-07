@@ -668,15 +668,12 @@ bool MovementAction::WaitForTransport()
 
 TravelPath MovementAction::ResolveMovePath(const WorldPosition& startPosition, const WorldPosition& endPosition, Unit* mover, LastMovement& lastMove)    
 {
-    auto pmoResolve = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::ResolveMovePath", ai);
-
     float totalDistance = startPosition.distance(endPosition);
     float maxDistChange = totalDistance * 0.1f;
 
     // Last long path still leads to roughly the same destination.
     if (!lastMove.lastPath.empty() && lastMove.lastPath.getBack().distance(endPosition) < maxDistChange)
     {
-        auto pmoReuse = sPerformanceMonitor.start(PERF_MON_ACTION, "ResolveMovePath::reuse-last", ai);
         return lastMove.lastPath;
     }
 
@@ -695,12 +692,10 @@ TravelPath MovementAction::ResolveMovePath(const WorldPosition& startPosition, c
 
     if (needsLongPath && !sTravelNodeMap.getNodes().empty() && !bot->InBattleGround())
     {
-        auto pmoTravelNode = sPerformanceMonitor.start(PERF_MON_ACTION, "ResolveMovePath::travel-node", ai);
         outMovePath = sTravelNodeMap.getFullPath(startPosition, endPosition, bot); //Pathfind using nodes.
     }
     else
     {
-        auto pmoNavmesh = sPerformanceMonitor.start(PERF_MON_ACTION, "ResolveMovePath::navmesh", ai);
         std::vector<WorldPosition> path = startPosition.getPathTo(endPosition, bot); //Navemesh pathfinding only.
 
         outMovePath.addPath(path);
@@ -787,6 +782,11 @@ bool MovementAction::HandleSpecialMovement(TravelPath& path)
         return true;
     }
 
+    if (currentPoint.type == PathNodeType::NODE_TRANSPORT && sPlayerbotAIConfig.transportTeleportType == 2) //Instant teleport case
+    {
+        return bot->TeleportTo(nextPoint.point.getMapId(), nextPoint.point.getX(), nextPoint.point.getY(), nextPoint.point.getZ(), nextPoint.point.getO(), 0);
+    }
+    
     if (currentPoint.type == PathNodeType::NODE_TRANSPORT)
     {
         bool usedTransport = UseTransport(ai, currentPoint.entry, currentPoint.point, nextPoint.point, sPlayerbotAIConfig.transportTeleportType > 0);
@@ -801,7 +801,7 @@ bool MovementAction::HandleSpecialMovement(TravelPath& path)
         else
         {
             if (!bot->GetTransport())
-                return bot->TeleportTo(nextPoint.point.getMapId(), nextPoint.point.getX(), nextPoint.point.getY(), nextPoint.point.getZ(), nextPoint.point.getO(), 0) ? true : false;
+                return bot->TeleportTo(nextPoint.point.getMapId(), nextPoint.point.getX(), nextPoint.point.getY(), nextPoint.point.getZ(), nextPoint.point.getO(), 0);
 
             lastTransportEntry = nextPoint.entry;
         }
@@ -812,9 +812,9 @@ bool MovementAction::HandleSpecialMovement(TravelPath& path)
         WaitForReach(1000.0f);
         return true;
     }
-
+    
     if (nextPoint.type == PathNodeType::NODE_FLIGHTPATH && nextPoint.entry)
-        return UseTaxi(ai, nextPoint.entry, true) ? true : false;
+        return UseTaxi(ai, nextPoint.entry, true);
 
     if (nextPoint.type == PathNodeType::NODE_TELEPORT && nextPoint.entry)
     {
@@ -949,14 +949,9 @@ void MovementAction::UpdateFlyingState(
 
 void MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bool masterWalking)
 {
-    auto pmoDispatch = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::DispatchMovement", ai);
-
     MotionMaster& mm = *bot->GetMotionMaster();
 
-    {
-        auto pmoClear = sPerformanceMonitor.start(PERF_MON_ACTION, "DispatchMovement::clear", ai);
-        mm.Clear();
-    }
+    mm.Clear();
 
     std::vector<WorldPosition> path = movePath.getPointPath();
     WorldPosition movePosition = path.back();
@@ -970,7 +965,6 @@ void MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 
     if (!generatePath || bot->IsFreeFlying())
     {
-        auto pmoMovePoint = sPerformanceMonitor.start(PERF_MON_ACTION, "DispatchMovement::MovePoint", ai);
 #ifdef MANGOSBOT_ZERO
         mm.MovePoint(movePosition.getMapId(),
             movePosition.getX(),
@@ -988,10 +982,7 @@ void MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     }
     else
     {
-        {
-            auto pmoHazards = sPerformanceMonitor.start(PERF_MON_ACTION, "DispatchMovement::hazards", ai);
-            GeneratePathAvoidingHazards(path);
-        }
+        GeneratePathAvoidingHazards(path);
 
         std::vector<G3D::Vector3> pointPath = WorldPosition().toPointsArray(path);
         pointPath.insert(pointPath.begin(), WorldPosition(bot).getVector3());
@@ -1020,7 +1011,6 @@ void MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
         else
         {
             WorldPosition movePosition = path.back();
-            auto pmoMovePoint = sPerformanceMonitor.start(PERF_MON_ACTION, "DispatchMovement::MovePoint", ai);
 
 #ifdef MANGOSBOT_ZERO
             mm.MovePoint(movePosition.getMapId(),
@@ -1038,10 +1028,7 @@ void MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 #endif
         }
     }
-    {
-        auto pmoWait = sPerformanceMonitor.start(PERF_MON_ACTION, "DispatchMovement::WaitForReach", ai);
-        WaitForReach(size);
-    }
+    WaitForReach(size);
 }
 
 
@@ -1068,8 +1055,6 @@ Unit* MovementAction::GetMover(Player* bot)
 
 bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
 {
-    auto pmoPrecheck = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::precheck", ai);
-
     if (!endPos.isValid())
         return false;
 
@@ -1098,8 +1083,6 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     if (WaitForTransport())
         return true;
 
-    pmoPrecheck.reset();
-
     WorldPosition startPos(bot);
     float totalDistance = startPos.distance(endPos);
     float maxDistChange = totalDistance * 0.1f;
@@ -1118,12 +1101,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     }
 
     WorldPosition flyMovePosition;
-    bool flewDirect;
-    {
-        auto pmoFly = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::FlyDirect", ai);
-        flewDirect = FlyDirect(startPos, endPos, flyMovePosition, lastMove.lastPath);
-    }
-    if (flewDirect)
+    if (FlyDirect(startPos, endPos, flyMovePosition, lastMove.lastPath))
         return true;
 
     
@@ -1138,10 +1116,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
      
     if (!bot->GetTransport())
-    {
-        auto pmoShortcut = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::makeShortCut", ai);
         movePath.makeShortCut(startPos, sPlayerbotAIConfig.reactDistance, bot);
-    }
 
     if (movePath.empty())
     {
@@ -1153,17 +1128,10 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     TravelNodePathType pathType = TravelNodePathType::none;
     uint32 entry = 0;
     WorldPosition telePosition;
-    bool specialMovement;
-    {
-        auto pmoSpecialCheck = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::special-check", ai);
-        specialMovement = movePath.UpcommingSpecialMovement(startPos, sPlayerbotAIConfig.reactDistance,bot->GetTransport());
-    }
+    bool specialMovement = movePath.UpcommingSpecialMovement(startPos, sPlayerbotAIConfig.reactDistance,bot->GetTransport());
 
     if (specialMovement)
-    {
-        auto pmoSpecial = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::special-handle", ai);
         return HandleSpecialMovement(movePath);
-    }
     
     if (bot->GetTransport()) //Transports needed to be handled before now.
         return false;
@@ -1174,10 +1142,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         lastMove.setPath(movePath);
     }
 
-    {
-        auto pmoClip = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::ClipPath", ai);
-        movePath.ClipPath(ai, mover, ignoreEnemyTargets);
-    }
+    movePath.ClipPath(ai, mover, ignoreEnemyTargets);
 
     if(ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
     {
@@ -1208,7 +1173,6 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
     if (!react)
     {
-        auto pmoWait = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::path-wait", ai);
         float fullPathDist = startPos.getPathLength(movePath.getPointPath());
         float waitDist = (totalDistance > sPlayerbotAIConfig.reactDistance) ? fullPathDist - 10.0f : fullPathDist;
         WaitForReach(waitDist);
@@ -1226,7 +1190,6 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
     if (totalDistance > sPlayerbotAIConfig.reactDistance && !detailedMove)
     {
-        auto pmoTeleport = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::teleport-check", ai);
         WorldPosition teleportPosition = movePath.getBack();
         if (!ai->HasPlayerNearby(teleportPosition))
         {
@@ -1264,10 +1227,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
         WorldPosition movePosition = movePath.getBack();
         //Todo fix this for paths.
-        {
-            auto pmoFlying = sPerformanceMonitor.start(PERF_MON_ACTION, "MoveTo2::UpdateFlyingState", ai);
-            UpdateFlyingState(movePosition, totalDistance, startPos.getZ(), sPlayerbotAIConfig.reactDistance, isWalking);
-        }
+        UpdateFlyingState(movePosition, totalDistance, startPos.getZ(), sPlayerbotAIConfig.reactDistance, isWalking);
     }
 #endif
 
