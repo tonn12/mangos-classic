@@ -58,6 +58,10 @@ jobs:
         shell: pwsh
         run: .github/scripts/apply-playerbots-travelnode-perf.ps1 -Path "src/modules/PlayerBots/playerbot/TravelNode.cpp"
 
+      - name: Apply TravelNode performance optimizations
+        shell: pwsh
+        run: .github/scripts/apply-playerbots-travelnode-opt.ps1 -Path "src/modules/PlayerBots/playerbot/TravelNode.cpp"
+
       - name: Build
         run: >
           cmake
