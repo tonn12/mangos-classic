@@ -113,7 +113,7 @@ Replace-AllExpected @'
 '@ @'
                 open.push_back(childNode);
                 childNode->open = true;
-'@ 3 "remove redundant AStar push_heap"
+'@ 1 "remove redundant AStar push_heap"
 
 [System.IO.File]::WriteAllText($Path, $text, [System.Text.UTF8Encoding]::new($false))
 Write-Host "TravelNode performance optimizations applied to $Path"
