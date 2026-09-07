@@ -18,6 +18,9 @@ function Replace-Exact {
         [Parameter(Mandatory = $true)][string]$Label
     )
 
+    $Old = $Old.Replace("`r`n", "`n")
+    $New = $New.Replace("`r`n", "`n")
+
     $count = ([regex]::Matches($script:text, [regex]::Escape($Old))).Count
     if ($count -ne 1) {
         throw "Replacement '$Label' expected exactly once, found $count"
