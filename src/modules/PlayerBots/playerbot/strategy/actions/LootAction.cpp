@@ -136,15 +136,10 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
 
         if (isForQuest)
         {
-            // Quest herb-like objects should be usable without the Herbalism profession.
-            if (go)
-            {
-                go->Use(bot);
-                SetDuration(sPlayerbotAIConfig.lootDelay);
-                return true;
-            }
-
-            return false;
+            // Quest herb-like objects use the normal opening spell even when
+            // the bot does not know Herbalism. The loot target is already the GO,
+            // so PlayerbotAI::CastSpell will target the GameObject.
+            return ai->CastSpell(sPlayerbotAIConfig.openGoSpell, bot);
         }
 
         return ai->HasSkill(SKILL_HERBALISM) ? ai->CastSpell(HERB_GATHERING, bot) : false;
