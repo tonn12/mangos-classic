@@ -26,11 +26,7 @@ function Replace-Exact {
     $script:text = $script:text.Replace($Old, $New)
 }
 
-Replace-Exact @'
-#include "playerbot/ServerFacade.h"
-#include "MotionGenerators/MoveMap.h"
-'@ @'
-#include "playerbot/ServerFacade.h"
+Replace-Exact '#include "MotionGenerators/MoveMap.h"' @'
 #include "playerbot/PerformanceMonitor.h"
 #include "MotionGenerators/MoveMap.h"
 '@ "include PerformanceMonitor"
