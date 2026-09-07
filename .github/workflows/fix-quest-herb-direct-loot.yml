@@ -1,0 +1,45 @@
+name: Apply direct quest herb loot fix
+
+on:
+  push:
+    branches:
+      - diagnostics/travel-move-perf
+    paths:
+      - .github/workflows/fix-quest-herb-direct-loot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout customized CMaNGOS
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Apply direct quest herb loot fix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name "ChatGPT Fix Bot"
+          git config user.email "actions@users.noreply.github.com"
+
+          @'
+          from pathlib import Path
+
+          path = Path("src/modules/PlayerBots/playerbot/strategy/actions/LootAction.cpp")
+          data = path.read_text(encoding="utf-8")
+          old = '''        if (isForQuest)\n        {\n            // Quest herb-like objects use the normal opening spell even when\n            // the bot does not know Herbalism. The loot target is already the GO,\n            // so PlayerbotAI::CastSpell will target the GameObject.\n            return ai->CastSpell(sPlayerbotAIConfig.openGoSpell, bot);\n        }'''
+          new = '''        if (isForQuest)\n        {\n            // Quest herb-like objects are quest interactions, not profession gathers.\n            // Preserve the GameObject use side effects, then open its loot directly.\n            // This avoids the Herbalism lock check that prevents bots without the\n            // profession from collecting quest-only herb-like objects.\n            if (go)\n            {\n                go->Use(bot);\n\n                WorldPacket packet(CMSG_LOOT, 8);\n                packet << go->GetObjectGuid();\n                bot->GetSession()->HandleLootOpcode(packet);\n\n                SetDuration(sPlayerbotAIConfig.lootDelay);\n                return true;\n            }\n\n            return false;\n        }'''
+          if old not in data:
+              raise SystemExit("Expected quest herb opening block was not found")
+          path.write_text(data.replace(old, new, 1), encoding="utf-8", newline="")
+          '@ | python -
+
+          Remove-Item ".github/workflows/fix-quest-herb-direct-loot.yml"
+          git add -A
+          git diff --cached --check
+          git commit -m "Fix quest herb collection via direct loot"
+          git push origin HEAD:diagnostics/travel-move-perf
