@@ -23,31 +23,7 @@ endif()
 
 # Playerbots module
 if(BUILD_PLAYERBOTS)
-  include(FetchContent)
-
-  FetchContent_Declare(
-    PlayerBots
-    SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/modules/PlayerBots"
-    GIT_REPOSITORY "https://github.com/tonn12/playerbots.git"
-    GIT_TAG "diagnostics/travel-move-perf"
-  )
-
-  FetchContent_GetProperties(PlayerBots)
-  if (NOT playerbots_POPULATED)
-    FetchContent_Populate(PlayerBots)
-    message(STATUS "Playerbots module source dir: ${playerbots_SOURCE_DIR}")
-  else()
-    message(STATUS "Playerbots module already populated: ${playerbots_POPULATED}")
-  endif()
-
-  add_subdirectory(${playerbots_SOURCE_DIR})
-
-else()
-  if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/modules/PlayerBots)
-    message(STATUS "PlayerBots module exists, but not building. You can remove it manually if you don't need it. (rm -rf ${CMAKE_CURRENT_SOURCE_DIR}/modules/PlayerBots)")
-
-    #file(REMOVE_RECURSE ${CMAKE_CURRENT_SOURCE_DIR}/modules/PlayerBots)
-  endif()
+  add_subdirectory(modules/PlayerBots)
 endif()
 
 if(BUILD_GAME_SERVER)
