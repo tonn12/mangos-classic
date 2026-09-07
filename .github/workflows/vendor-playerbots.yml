@@ -40,15 +40,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path "src/modules" | Out-Null
           git read-tree --prefix=src/modules/PlayerBots/ -u playerbots/diagnostics/travel-move-perf
 
-          # Preserve the current custom build behavior by permanently applying
-          # the same PlayerBots profiling/TravelNode changes that used to be
-          # applied only inside GitHub Actions.
           git apply --directory=src/modules/PlayerBots --recount .github/patches/playerbots-deep-movement-perf.patch
           .github/scripts/apply-playerbots-travelnode-perf.ps1 -Path "src/modules/PlayerBots/playerbot/TravelNode.cpp"
           .github/scripts/apply-playerbots-travelnode-opt.ps1 -Path "src/modules/PlayerBots/playerbot/TravelNode.cpp"
 
-          # Fix quest herb-like GameObjects: quest objects must be directly
-          # usable even when the bot does not know Herbalism.
           @'
           from pathlib import Path
 
@@ -61,8 +56,6 @@ jobs:
           path.write_text(data.replace(old, new, 1), encoding="utf-8", newline="")
           '@ | python -
 
-          # PlayerBots now lives in this repository, so stop fetching it from
-          # a separate GitHub repository during CMake configure.
           @'
           from pathlib import Path
 
@@ -74,51 +67,6 @@ jobs:
           path.write_text(data[:start] + replacement + data[end:], encoding="utf-8", newline="")
           '@ | python -
 
-          # The PlayerBots performance changes are now committed source, so
-          # remove the old build-time patching steps from the Windows workflow.
-          @'
-          from pathlib import Path
-
-          path = Path(".github/workflows/custom-windows.yml")
-          lines = path.read_text(encoding="utf-8").splitlines()
-          remove_names = {
-              "Apply deep PlayerBots movement profiler",
-              "Apply TravelNode deep profiler",
-              "Apply TravelNode performance optimizations",
-              "Show PlayerBots revision",
-          }
-          out = []
-          i = 0
-          while i < len(lines):
-              line = lines[i]
-              stripped = line.strip()
-              if stripped.startswith("- name:"):
-                  name = stripped.split(":", 1)[1].strip()
-                  if name in remove_names:
-                      i += 1
-                      while i < len(lines):
-                          nxt = lines[i]
-                          if nxt.startswith("      - name:"):
-                              break
-                          i += 1
-                      continue
-              out.append(line)
-              i += 1
-
-          marker = "      - name: Package"
-          insert = [
-              "      - name: Show vendored PlayerBots changes",
-              "        shell: pwsh",
-              "        run: |",
-              "          git log -1 --oneline -- src/modules/PlayerBots",
-              "          git status --short",
-              "",
-          ]
-          idx = out.index(marker)
-          out[idx:idx] = insert
-          path.write_text("\n".join(out) + "\n", encoding="utf-8", newline="")
-          '@ | python -
-
           @'
           # Vendored PlayerBots
 
@@ -126,13 +74,10 @@ jobs:
           Source branch at migration: `diagnostics/travel-move-perf`
           Source commit: `edf099e76b06d9d4a8ada909a201886156df0ad8`
 
-          This copy also contains the CMaNGOS custom movement/TravelNode patches
-          that were previously applied only during GitHub Actions builds, plus
-          the quest herb-like GameObject interaction fix.
+          This copy also contains the custom movement/TravelNode patches that
+          were previously applied only during GitHub Actions builds, plus the
+          quest herb-like GameObject interaction fix.
           '@ | Set-Content -Encoding UTF8 "src/modules/PlayerBots/VENDORED_FROM.md"
-
-          # One-time migration workflow: remove it from the resulting branch.
-          git rm .github/workflows/vendor-playerbots.yml
 
           git add -A
           git status --short
