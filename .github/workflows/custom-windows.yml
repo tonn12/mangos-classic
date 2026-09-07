@@ -50,6 +50,10 @@ jobs:
           -DBUILD_MODULES=OFF
           -DBUILD_GIT_ID=ON
 
+      - name: Apply deep PlayerBots movement profiler
+        shell: pwsh
+        run: git -C src/modules/PlayerBots apply "$env:GITHUB_WORKSPACE/.github/patches/playerbots-deep-movement-perf.patch"
+
       - name: Build
         run: >
           cmake
@@ -62,6 +66,7 @@ jobs:
         run: |
           git -C src/modules/PlayerBots log -1 --oneline
           git -C src/modules/PlayerBots remote -v
+          git -C src/modules/PlayerBots diff -- playerbot/strategy/actions/MovementActions.cpp
 
       - name: Package
         shell: pwsh
