@@ -136,10 +136,23 @@ bool OpenLootAction::DoLoot(LootObject& lootObject)
 
         if (isForQuest)
         {
-            // Quest herb-like objects use the normal opening spell even when
-            // the bot does not know Herbalism. The loot target is already the GO,
-            // so PlayerbotAI::CastSpell will target the GameObject.
-            return ai->CastSpell(sPlayerbotAIConfig.openGoSpell, bot);
+            // Quest herb-like objects are quest interactions, not profession gathers.
+            // Preserve the GameObject use side effects, then open its loot directly.
+            // This avoids the Herbalism lock check that prevents bots without the
+            // profession from collecting quest-only herb-like objects.
+            if (go)
+            {
+                go->Use(bot);
+
+                WorldPacket packet(CMSG_LOOT, 8);
+                packet << go->GetObjectGuid();
+                bot->GetSession()->HandleLootOpcode(packet);
+
+                SetDuration(sPlayerbotAIConfig.lootDelay);
+                return true;
+            }
+
+            return false;
         }
 
         return ai->HasSkill(SKILL_HERBALISM) ? ai->CastSpell(HERB_GATHERING, bot) : false;
