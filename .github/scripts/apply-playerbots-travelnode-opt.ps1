@@ -143,5 +143,186 @@ Replace-Exact @'
             }
 '@ "maintain AStar heap after relax"
 
+# Connector optimization: the start-side local navmesh connector depends only on
+# startPos/startNode within this getRoute() call, but the original code computes it
+# only after running A*. If that connector is impossible, the A* work is wasted.
+# Check/cache the start connector first for graph-reachable pairs. Keep the more
+# expensive end connector after A* so routes rejected by bot-specific costs do not
+# cause unnecessary end-side pathfinding. Transport behavior stays unchanged.
+$loopStartMarker = "    //Cycle over the combinations of these 5 nodes.`n"
+$loopEndMarker = "`n    `n    if (sPlayerbotAIConfig.hasLog(\"deadzone.csv\"))"
+$loopStartIndex = $text.IndexOf($loopStartMarker)
+if ($loopStartIndex -lt 0) {
+    throw "Connector optimization: loop start marker not found"
+}
+$loopEndIndex = $text.IndexOf($loopEndMarker, $loopStartIndex)
+if ($loopEndIndex -lt 0) {
+    throw "Connector optimization: loop end marker not found"
+}
+
+$newLoop = @'
+    std::unordered_map<TravelNode*, std::vector<WorldPosition>> goodStartPaths;
+
+    //Cycle over the combinations of these 5 nodes.
+    for (auto& endNode : endNodes)
+    {
+        endPath.clear();
+        for (auto& startNode : startNodes)
+        {
+            if (std::find(badStartNodes.begin(), badStartNodes.end(), startNode) != badStartNodes.end())
+                continue;
+
+            WorldPosition startNodePosition = *startNode->getPosition();
+            WorldPosition endNodePosition = *endNode->getPosition();
+
+            float maxStartDistance = startNode->isTransport() ? 20.0f : 1.0f;
+
+            // Preserve the original transport shortcut exactly: transport routes
+            // return directly and never perform local start/end connector checks.
+            if (transportEntry)
+            {
+                TravelNodeRoute route;
+                {
+                    std::unique_ptr<PerformanceMonitorOperation> pmoNodeRoute;
+                    if (perfAi)
+                        pmoNodeRoute = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::node-AStar", perfAi);
+                    route = getRoute(startNode, endNode, unit);
+                }
+                return route;
+            }
+
+            // getRoute(startNode, endNode, unit) performs the same graph gate before
+            // entering A*. Do it here as a cheap precheck so connector work is not
+            // done for node pairs that cannot possibly have a graph route.
+            if (!startNode->hasRouteTo(endNode))
+                continue;
+
+            // Check the local path from the bot to this start TravelNode before A*.
+            // Cache successful connectors because the same startNode can be tested
+            // against several endNodes before a route is accepted.
+            bool hasStartPath = false;
+            auto cachedStartPath = goodStartPaths.find(startNode);
+            if (cachedStartPath != goodStartPaths.end())
+            {
+                newStartPath = cachedStartPath->second;
+                hasStartPath = true;
+            }
+            else
+            {
+                newStartPath = startPath;
+                hasStartPath = startNodePosition.cropPathTo(newStartPath, maxStartDistance);
+
+                if (!hasStartPath)
+                {
+                    {
+                        std::unique_ptr<PerformanceMonitorOperation> pmoStartConnector;
+                        if (perfAi)
+                            pmoStartConnector = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::start-connector", perfAi);
+                        newStartPath = startPos.getPathTo(startNodePosition, unit);
+                    }
+                    hasStartPath = startNodePosition.isPathTo(newStartPath, maxStartDistance);
+                }
+
+                if (!hasStartPath)
+                {
+                    WorldPosition surfaceStart = startPos;
+                    WorldPosition surfaceNode = startNodePosition;
+                    if (surfaceStart.setAtWaterSurface() || surfaceNode.setAtWaterSurface())
+                    {
+                        {
+                            std::unique_ptr<PerformanceMonitorOperation> pmoStartWater;
+                            if (perfAi)
+                                pmoStartWater = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::start-connector-water", perfAi);
+                            newStartPath = surfaceStart.getPathTo(surfaceNode, unit);
+                        }
+                        hasStartPath = surfaceNode.isPathTo(newStartPath, maxStartDistance);
+                    }
+                }
+
+                if (!hasStartPath)
+                {
+                    badStartNodes.push_back(startNode);
+                    continue;
+                }
+
+                goodStartPaths.emplace(startNode, newStartPath);
+            }
+
+            // Only graph-reachable node pairs with a valid local start connector
+            // reach the comparatively expensive TravelNode A* search.
+            TravelNodeRoute route;
+            {
+                std::unique_ptr<PerformanceMonitorOperation> pmoNodeRoute;
+                if (perfAi)
+                    pmoNodeRoute = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::node-AStar", perfAi);
+                route = getRoute(startNode, endNode, unit);
+            }
+
+            if (route.isEmpty())
+                continue;
+
+            // Keep the end connector after A*: it is more expensive than A* in the
+            // current profile, so do not calculate it for bot-specific rejected routes.
+            if (endPath.empty())
+            {
+                if (endPos.mapid == startPos.mapid)
+                {
+                    {
+                        std::unique_ptr<PerformanceMonitorOperation> pmoEndConnector;
+                        if (perfAi)
+                            pmoEndConnector = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::end-connector", perfAi);
+                        endPath = endNodePosition.getPathTo(endPos, unit);
+                    }
+
+                    bool hasEndPath = endPos.isPathTo(endPath, 1.0f);
+
+                    if (!hasEndPath)
+                    {
+                        WorldPosition surfaceNode = endNodePosition;
+                        WorldPosition surfaceEnd = endPos;
+                        if (surfaceNode.setAtWaterSurface() || surfaceEnd.setAtWaterSurface())
+                        {
+                            {
+                                std::unique_ptr<PerformanceMonitorOperation> pmoEndWater;
+                                if (perfAi)
+                                    pmoEndWater = sPerformanceMonitor.start(PERF_MON_ACTION, "TravelNodeRoutePos::end-connector-water", perfAi);
+                                endPath = surfaceNode.getPathTo(surfaceEnd, unit);
+                            }
+                            hasEndPath = surfaceEnd.isPathTo(endPath, 1.0f);
+                        }
+                    }
+
+                    if (!hasEndPath)
+                    {
+                        endPath.clear();
+                        badEndNodes.push_back(endNode);
+                        break;
+                    }
+                }
+                else
+                    endPath = {*endNode->getPosition(), endPos};
+            }
+
+            startPath = newStartPath;
+
+            if (sPlayerbotAIConfig.hasLog("deadzone.csv"))
+            {
+                PathFindResult fromResult = testPathToLoop(startPos, startNodePosition, unit, uid, {startPos, startNodePosition}, "start");
+
+                PathFindResult toResult = testPathToLoop(endNodePosition, endPos, unit, uid, {endNodePosition, endPos}, "end");
+
+                std::vector<WorldPosition> routePoints;
+                for (auto& p : route.getNodes())
+                    routePoints.push_back(*p->getPosition());
+                testPathToLoop(startPos, endPos, unit, uid, routePoints, "route");
+            }
+
+            return route;
+        }
+    }
+'@
+
+$text = $text.Substring(0, $loopStartIndex) + $newLoop + $text.Substring($loopEndIndex)
+
 [System.IO.File]::WriteAllText($Path, $text, [System.Text.UTF8Encoding]::new($false))
 Write-Host "TravelNode performance optimizations applied to $Path"
