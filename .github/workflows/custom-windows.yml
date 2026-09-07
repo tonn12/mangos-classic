@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - custom
+      - diagnostics/travel-move-perf
   workflow_dispatch:
 
 env:

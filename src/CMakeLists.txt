@@ -29,7 +29,7 @@ if(BUILD_PLAYERBOTS)
     PlayerBots
     SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/modules/PlayerBots"
     GIT_REPOSITORY "https://github.com/tonn12/playerbots.git"
-    GIT_TAG "custom"
+    GIT_TAG "diagnostics/travel-move-perf"
   )
 
   FetchContent_GetProperties(PlayerBots)
