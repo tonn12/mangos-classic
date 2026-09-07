@@ -52,7 +52,7 @@ jobs:
 
       - name: Apply deep PlayerBots movement profiler
         shell: pwsh
-        run: git -C src/modules/PlayerBots apply "$env:GITHUB_WORKSPACE/.github/patches/playerbots-deep-movement-perf.patch"
+        run: git -C src/modules/PlayerBots apply --recount "$env:GITHUB_WORKSPACE/.github/patches/playerbots-deep-movement-perf.patch"
 
       - name: Build
         run: >
