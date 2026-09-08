@@ -85,7 +85,9 @@ jobs:
               ('ready_no_pet', 'No pet!', 'У меня нет питомца!'),
               ('ready_pet_unhappy', 'Pet is unhappy!', 'Мой питомец недоволен!'),
           ]
-          def esc(s): return s.replace("'", "''")
+          def esc(s):
+              return s.replace("'", "''")
+
           for name, en, ru in rows:
               sql += f"INSERT INTO ai_playerbot_texts (name,text,say_type,reply_type,text_loc1,text_loc2,text_loc3,text_loc4,text_loc5,text_loc6,text_loc7,text_loc8) SELECT '{esc(name)}','{esc(en)}',0,0,'','','','','','','','{esc(ru)}' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM ai_playerbot_texts WHERE name='{esc(name)}');\n"
               sql += f"UPDATE ai_playerbot_texts SET text_loc8='{esc(ru)}' WHERE name='{esc(name)}';\n"
@@ -109,13 +111,13 @@ jobs:
           Path('src/modules/PlayerBots/sql/world/ai_playerbot_texts_ruRU_custom.sql').write_text(sql, encoding='utf-8')
           PY
 
-          git rm .github/workflows/localize-playerbot-ru.yml .github/workflows/localize-playerbot-ru-v2.yml
-          git add src/modules/PlayerBots/playerbot/strategy/actions/AddLootAction.cpp \
-                  src/modules/PlayerBots/playerbot/strategy/actions/FollowActions.cpp \
-                  src/modules/PlayerBots/playerbot/strategy/actions/StayActions.cpp \
-                  src/modules/PlayerBots/playerbot/strategy/actions/AreaTriggerAction.cpp \
-                  src/modules/PlayerBots/playerbot/strategy/actions/ReadyCheckAction.cpp
-          git add -f src/modules/PlayerBots/sql/world/ai_playerbot_texts_ruRU_custom.sql
+          git add -f \
+            src/modules/PlayerBots/playerbot/strategy/actions/AddLootAction.cpp \
+            src/modules/PlayerBots/playerbot/strategy/actions/FollowActions.cpp \
+            src/modules/PlayerBots/playerbot/strategy/actions/StayActions.cpp \
+            src/modules/PlayerBots/playerbot/strategy/actions/AreaTriggerAction.cpp \
+            src/modules/PlayerBots/playerbot/strategy/actions/ReadyCheckAction.cpp \
+            src/modules/PlayerBots/sql/world/ai_playerbot_texts_ruRU_custom.sql
           git diff --cached --check
           git commit -m "Localize PlayerBots conversational messages to ruRU"
           git push origin HEAD:diagnostics/travel-move-perf
