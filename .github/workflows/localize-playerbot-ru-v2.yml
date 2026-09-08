@@ -1,0 +1,121 @@
+name: Apply PlayerBots Russian localization v2
+
+on:
+  push:
+    branches:
+      - diagnostics/travel-move-perf
+    paths:
+      - .github/workflows/localize-playerbot-ru-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  localize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: diagnostics/travel-move-perf
+          fetch-depth: 0
+
+      - name: Apply localization
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "ChatGPT Localization Bot"
+          git config user.email "actions@users.noreply.github.com"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def rep(path, old, new, expected=1):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              n = text.count(old)
+              if n != expected:
+                  raise SystemExit(f'{path}: expected {expected}, found {n}: {old!r}')
+              p.write_text(text.replace(old, new), encoding='utf-8')
+
+          add = 'src/modules/PlayerBots/playerbot/strategy/actions/AddLootAction.cpp'
+          rep(add,
+              'std::ostringstream out;\n            out << hostiles.front()->GetName() << " is blocking " << wo->GetName() << ", need to kill it or I will not loot";\n            ai->TellError(requester, out.str());',
+              'std::map<std::string, std::string> args;\n            args["%unit"] = hostiles.front()->GetName();\n            args["%object"] = wo->GetName();\n            ai->TellError(requester, BOT_TEXT2("loot_blocked", args));')
+          rep(add,
+              'ai->TellPlayer(requester, "Can not loot quest item, my bags are full", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);',
+              'ai->TellPlayer(requester, BOT_TEXT("loot_quest_bags_full"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);', 2)
+          rep(add,
+              'ai->TellError(requester, "There is some loot but I do not have free bag space, so not looting");',
+              'ai->TellError(requester, BOT_TEXT("loot_bags_full"));', 2)
+          rep(add,
+              'std::ostringstream out;\n            out << hostiles.front()->GetName() << " is blocking " << wo->GetName() << ", need to kill it or I will not gather";\n            ai->TellError(requester, out.str());',
+              'std::map<std::string, std::string> args;\n            args["%unit"] = hostiles.front()->GetName();\n            args["%object"] = wo->GetName();\n            ai->TellError(requester, BOT_TEXT2("gather_blocked", args));')
+          rep(add,
+              'std::ostringstream out;\n            out << strongHostiles.front()->GetName() << " is blocking " << wo->GetName() << ", need to kill it or I will not gather";\n            ai->TellError(requester, out.str());',
+              'std::map<std::string, std::string> args;\n            args["%unit"] = strongHostiles.front()->GetName();\n            args["%object"] = wo->GetName();\n            ai->TellError(requester, BOT_TEXT2("gather_blocked", args));')
+
+          rep('src/modules/PlayerBots/playerbot/strategy/actions/FollowActions.cpp',
+              'ai->TellPlayerNoFacing(requester, "I\'m heading to your location but I\'m in combat", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);',
+              'ai->TellPlayerNoFacing(requester, BOT_TEXT("wait_travel_combat"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);')
+          rep('src/modules/PlayerBots/playerbot/strategy/actions/StayActions.cpp',
+              'ai->TellError(requester, "I can not stay, I\'m flying!");',
+              'ai->TellError(requester, BOT_TEXT("stay_flying"));')
+          rep('src/modules/PlayerBots/playerbot/strategy/actions/AreaTriggerAction.cpp',
+              'ai->TellError(requester, "I won\'t follow: too far away");',
+              'ai->TellError(requester, BOT_TEXT("follow_too_far"));')
+          rep('src/modules/PlayerBots/playerbot/strategy/actions/AreaTriggerAction.cpp',
+              'ai->TellError(requester, "Wait for me");',
+              'ai->TellError(requester, BOT_TEXT("wait_for_me"));')
+          ready = 'src/modules/PlayerBots/playerbot/strategy/actions/ReadyCheckAction.cpp'
+          rep(ready, 'ai->TellError(requester, "Out of ammo!");', 'ai->TellError(requester, BOT_TEXT("ready_no_ammo"));')
+          rep(ready, 'ai->TellError(requester, "No pet!");', 'ai->TellError(requester, BOT_TEXT("ready_no_pet"));')
+          rep(ready, 'ai->TellError(requester, "Pet is unhappy!");', 'ai->TellError(requester, BOT_TEXT("ready_pet_unhappy"));')
+
+          sql = '''-- Custom ruRU localization for PlayerBots user-facing messages.\n-- Safe to run repeatedly. Commands and strategy names remain English.\nSET NAMES utf8;\n\n'''
+          rows = [
+              ('loot_bags_full', 'There is some loot but I do not have free bag space, so not looting', 'Есть добыча, но в сумках нет свободного места, поэтому я её не подбираю.'),
+              ('loot_quest_bags_full', 'Can not loot quest item, my bags are full', 'Не могу подобрать квестовый предмет: в сумках нет свободного места.'),
+              ('loot_blocked', '%unit is blocking %object, need to kill it or I will not loot', '%unit мешает добраться до %object. Сначала нужно убить его, иначе я не смогу подобрать добычу.'),
+              ('gather_blocked', '%unit is blocking %object, need to kill it or I will not gather', '%unit мешает добраться до %object. Сначала нужно убить его, иначе я не смогу собрать ресурс.'),
+              ('wait_travel_combat', "I'm heading to your location but I'm in combat", 'Я иду к тебе, но сейчас нахожусь в бою.'),
+              ('stay_flying', "I can not stay, I'm flying!", 'Я не могу остановиться — я в полёте!'),
+              ('follow_too_far', "I won't follow: too far away", 'Я не могу следовать за тобой: слишком далеко.'),
+              ('wait_for_me', 'Wait for me', 'Подожди меня!'),
+              ('ready_no_ammo', 'Out of ammo!', 'У меня закончились боеприпасы!'),
+              ('ready_no_pet', 'No pet!', 'У меня нет питомца!'),
+              ('ready_pet_unhappy', 'Pet is unhappy!', 'Мой питомец недоволен!'),
+          ]
+          def esc(s): return s.replace("'", "''")
+          for name, en, ru in rows:
+              sql += f"INSERT INTO ai_playerbot_texts (name,text,say_type,reply_type,text_loc1,text_loc2,text_loc3,text_loc4,text_loc5,text_loc6,text_loc7,text_loc8) SELECT '{esc(name)}','{esc(en)}',0,0,'','','','','','','','{esc(ru)}' FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM ai_playerbot_texts WHERE name='{esc(name)}');\n"
+              sql += f"UPDATE ai_playerbot_texts SET text_loc8='{esc(ru)}' WHERE name='{esc(name)}';\n"
+
+          updates = {
+              'quest_accepted': 'Я принял задание %quest.',
+              'quest_error_bag_full': 'Не могу принять %quest: в сумках нет свободного места.',
+              'quest_status_incomplete': '%quest ещё не выполнено.',
+              'quest_status_available': '%quest доступно для принятия.',
+              'quest_status_failed': '%quest провалено.',
+              'quest_status_unable_to_complete': 'Я не могу выполнить %quest.',
+              'quest_status_completed': '%quest выполнено.',
+              'quest_error_completed': 'Я уже выполнил %quest.',
+              'quest_error_have_quest': 'У меня уже есть %quest.',
+              'quest_error_cant_take': 'Я не могу принять %quest из-за требований задания.',
+              'quest_error_log_full': 'Не могу принять %quest: журнал заданий заполнен.',
+          }
+          for name, ru in updates.items():
+              sql += f"UPDATE ai_playerbot_texts SET text_loc8='{esc(ru)}' WHERE name='{esc(name)}';\n"
+
+          Path('src/modules/PlayerBots/sql/world/ai_playerbot_texts_ruRU_custom.sql').write_text(sql, encoding='utf-8')
+          PY
+
+          git rm .github/workflows/localize-playerbot-ru.yml .github/workflows/localize-playerbot-ru-v2.yml
+          git add src/modules/PlayerBots/playerbot/strategy/actions/AddLootAction.cpp \
+                  src/modules/PlayerBots/playerbot/strategy/actions/FollowActions.cpp \
+                  src/modules/PlayerBots/playerbot/strategy/actions/StayActions.cpp \
+                  src/modules/PlayerBots/playerbot/strategy/actions/AreaTriggerAction.cpp \
+                  src/modules/PlayerBots/playerbot/strategy/actions/ReadyCheckAction.cpp
+          git add -f src/modules/PlayerBots/sql/world/ai_playerbot_texts_ruRU_custom.sql
+          git diff --cached --check
+          git commit -m "Localize PlayerBots conversational messages to ruRU"
+          git push origin HEAD:diagnostics/travel-move-perf
