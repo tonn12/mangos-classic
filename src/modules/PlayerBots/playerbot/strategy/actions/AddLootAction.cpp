@@ -163,9 +163,10 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
 
         if (hostiles.size() > 0)
         {
-            std::ostringstream out;
-            out << hostiles.front()->GetName() << " is blocking " << wo->GetName() << ", need to kill it or I will not loot";
-            ai->TellError(requester, out.str());
+            std::map<std::string, std::string> args;
+            args["%unit"] = hostiles.front()->GetName();
+            args["%object"] = wo->GetName();
+            ai->TellError(requester, BOT_TEXT2("loot_blocked", args));
             return false;
         }
     }
@@ -188,7 +189,7 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
 
             if (usedBagSpacePercent > 99)
             {
-                ai->TellPlayer(requester, "Can not loot quest item, my bags are full", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                ai->TellPlayer(requester, BOT_TEXT("loot_quest_bags_full"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                 return false;
             }
 
@@ -196,7 +197,7 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
 
         if (usedBagSpacePercent > 99)
         {
-            ai->TellError(requester, "There is some loot but I do not have free bag space, so not looting");
+            ai->TellError(requester, BOT_TEXT("loot_bags_full"));
             return false;
         }
     }
@@ -270,9 +271,10 @@ bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
     {
         if (hostiles.size() > 0)
         {
-            std::ostringstream out;
-            out << hostiles.front()->GetName() << " is blocking " << wo->GetName() << ", need to kill it or I will not gather";
-            ai->TellError(requester, out.str());
+            std::map<std::string, std::string> args;
+            args["%unit"] = hostiles.front()->GetName();
+            args["%object"] = wo->GetName();
+            ai->TellError(requester, BOT_TEXT2("gather_blocked", args));
             return false;
         }
     }
@@ -280,9 +282,10 @@ bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
     {
         if (strongHostiles.size() > 1)
         {
-            std::ostringstream out;
-            out << strongHostiles.front()->GetName() << " is blocking " << wo->GetName() << ", need to kill it or I will not gather";
-            ai->TellError(requester, out.str());
+            std::map<std::string, std::string> args;
+            args["%unit"] = strongHostiles.front()->GetName();
+            args["%object"] = wo->GetName();
+            ai->TellError(requester, BOT_TEXT2("gather_blocked", args));
             return false;
         }
     }
@@ -305,7 +308,7 @@ bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
 
             if (usedBagSpacePercent > 99)
             {
-                ai->TellPlayer(requester, "Can not loot quest item, my bags are full", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                ai->TellPlayer(requester, BOT_TEXT("loot_quest_bags_full"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                 return false;
             }
 
@@ -313,7 +316,7 @@ bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
 
         if (usedBagSpacePercent > 99)
         {
-            ai->TellError(requester, "There is some loot but I do not have free bag space, so not looting");
+            ai->TellError(requester, BOT_TEXT("loot_bags_full"));
             return false;
         }
     }

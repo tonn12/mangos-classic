@@ -87,19 +87,19 @@ public:
         {
             if (!bot->GetUInt32Value(PLAYER_AMMO_ID))
             {
-                ai->TellError(requester, "Out of ammo!");
+                ai->TellError(requester, BOT_TEXT("ready_no_ammo"));
                 return false;
             }
 
             if (!bot->GetPet())
             {
-                ai->TellError(requester, "No pet!");
+                ai->TellError(requester, BOT_TEXT("ready_no_pet"));
                 return false;
             }
 
             if (bot->GetPet()->GetHappinessState() == UNHAPPY)
             {
-                ai->TellError(requester, "Pet is unhappy!");
+                ai->TellError(requester, BOT_TEXT("ready_pet_unhappy"));
                 return false;
             }
         }
