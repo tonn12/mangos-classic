@@ -31,11 +31,17 @@ jobs:
 
           def rep(path, old, new, expected=1):
               p = Path(path)
-              text = p.read_text(encoding='utf-8')
-              n = text.count(old)
+              with p.open('r', encoding='utf-8', newline='') as f:
+                  text = f.read()
+              eol = '\r\n' if '\r\n' in text else '\n'
+              old_native = old.replace('\n', eol)
+              new_native = new.replace('\n', eol)
+              n = text.count(old_native)
               if n != expected:
                   raise SystemExit(f'{path}: expected {expected}, found {n}: {old!r}')
-              p.write_text(text.replace(old, new), encoding='utf-8')
+              text = text.replace(old_native, new_native)
+              with p.open('w', encoding='utf-8', newline='') as f:
+                  f.write(text)
 
           add = 'src/modules/PlayerBots/playerbot/strategy/actions/AddLootAction.cpp'
           rep(add,
