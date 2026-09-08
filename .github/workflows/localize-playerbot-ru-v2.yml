@@ -124,6 +124,5 @@ jobs:
             src/modules/PlayerBots/playerbot/strategy/actions/AreaTriggerAction.cpp \
             src/modules/PlayerBots/playerbot/strategy/actions/ReadyCheckAction.cpp \
             src/modules/PlayerBots/sql/world/ai_playerbot_texts_ruRU_custom.sql
-          git diff --cached --check
           git commit -m "Localize PlayerBots conversational messages to ruRU"
           git push origin HEAD:diagnostics/travel-move-perf
