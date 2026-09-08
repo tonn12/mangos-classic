@@ -16,9 +16,13 @@ bool ListQuestsAction::Execute(Event& event)
     {
         ListQuests(requester, QUEST_LIST_FILTER_INCOMPLETED);
     }
-    else if (event.getParam() == "all")
+    else if (event.getParam().empty() || event.getParam() == "all")
     {
         ListQuests(requester, QUEST_LIST_FILTER_ALL);
+    }
+    else if (event.getParam() == "summary")
+    {
+        ListQuests(requester, QUEST_LIST_FILTER_SUMMARY);
     }
     else if (event.getParam().find("travel") == 0)
     {
